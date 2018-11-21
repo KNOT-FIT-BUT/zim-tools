@@ -26,8 +26,15 @@
 #include <stdexcept>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <iomanip> /* smrz */
+#include <cstdlib> /* smrz */
+#include <dirent.h> /* smrz */
 
 #include "arg.h"
+
+const std::string title_beg = "<title>"; /* smrz */
+const std::string title_end = "</title>"; /* smrz */
+const int max_file_size = 100 * 1024 * 1024; /* smrz */
 
 class ZimDumper
 {
@@ -60,6 +67,9 @@ class ZimDumper
       { listArticleT(*pos, extra); }
     void dumpFiles(const std::string& directory);
     void verifyChecksum();
+    void dumpFiles2One(const std::string& dumpfile, std::string input_file, const std::string& lang); /* smrz */
+    std::string IntToString(int num); /* smrz */
+    std::string ReplaceQuotMarks(std::string uri); /* smrz */
 };
 
 void ZimDumper::printInfo()
@@ -289,6 +299,91 @@ void ZimDumper::verifyChecksum()
     std::cout << "no checksum" << std::endl;
 }
 
+std::string ZimDumper::IntToString(int num){ /* smrz */
+	 /* smrz */
+	char s[8]; /* smrz */
+	sprintf(s, "%04d", num); /* smrz */
+	std::ostringstream convert; /* smrz */
+	convert << s; /* smrz */
+	return convert.str(); /* smrz */
+} /* smrz */
+ /* smrz */
+std::string ZimDumper::ReplaceQuotMarks(std::string uri){ /* smrz */
+ /* smrz */
+	std::string new_uri = ""; /* smrz */
+ /* smrz */
+	for( unsigned i=0; i < uri.length(); i++ ){ /* smrz */
+		if( uri.at(i) == '"' ){ /* smrz */
+			new_uri += "%22"; /* smrz */
+		}else{ /* smrz */
+			new_uri += uri.at(i); /* smrz */
+		} /* smrz */
+	} /* smrz */
+ /* smrz */
+	return new_uri; /* smrz */
+} /* smrz */
+ /* smrz */
+void ZimDumper::dumpFiles2One(const std::string& dump_dir, std::string input_file, const std::string& lang){ /* smrz */
+ /* smrz */
+	int file_no = 1; /* smrz */
+	unsigned bytes_written = 0; /* smrz */
+ /* smrz */
+	if(::opendir(dump_dir.c_str()) == NULL){ /* smrz */
+		if(::mkdir(dump_dir.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == -1){ /* smrz */
+			std::cout << "[Error], can't create directory"; /* smrz */
+			return; /* smrz */
+		} /* smrz */
+	} /* smrz */
+ /* smrz */
+  std::size_t position = input_file.find("/"); /* smrz */
+  while(position != std::string::npos){ /* smrz */
+    input_file.erase(0, position + 1); /* smrz */
+    position = input_file.find("/"); /* smrz */
+  } /* smrz */
+  input_file = input_file.substr(0, input_file.length()-4) + ".htmldump."; /* smrz */
+ /* smrz */
+	std::string file_name ( dump_dir + "/" + input_file + "part" + IntToString(file_no) ); /* smrz */
+ /* smrz */
+	std::ofstream out; /* smrz */
+	out.open(file_name.c_str()); /* smrz */
+ /* smrz */
+	for( zim::File::const_iterator it = pos; it != file.end(); ++it ){ /* smrz */
+ /* smrz */
+		if( it->getNamespace() == 'A' ){ /* smrz */
+			std::string data(it->getData().data() , it->getData().size()); /* smrz */
+			std::string title, uri; /* smrz */
+ /* smrz */
+			std::size_t found = data.find(title_beg); /* smrz */
+			if( found != std::string::npos ){ /* smrz */
+				title = data.substr(found + title_beg.length() , data.find(title_end) - (found + title_beg.length()) ); /* smrz */
+				title = ReplaceQuotMarks(title); /* smrz */
+				uri = "http://" + lang + ".wikipedia.org/wiki/" + title; /* smrz */
+				std::replace( uri.begin(), uri.end(), ' ', '_'); /* smrz */
+			} /* smrz */
+			 /* smrz */
+			if( title.empty() ){ /* smrz */
+				continue; /* smrz */
+      } /* smrz */
+ /* smrz */
+			data = "<doc url=\""+ uri +"\" title=\""+ title +"\">\n" + data + "\n</doc>\n"; /* smrz */
+			out << data; /* smrz */
+			if( !out ){ /* smrz */
+				throw std::runtime_error("error writing file " + file_name); /* smrz */
+      } /* smrz */
+ /* smrz */
+			bytes_written += data.length(); /* smrz */
+ /* smrz */
+			if( bytes_written >= max_file_size ){ /* smrz */
+				file_no++; /* smrz */
+				bytes_written = 0; /* smrz */
+				file_name = ( dump_dir + "/" + input_file + "part" + IntToString(file_no)); /* smrz */
+				out.close(); /* smrz */
+				out.open(file_name.c_str()); /* smrz */
+			} 	 /* smrz */
+		} /* smrz */
+	} /* smrz */
+} /* smrz */
+
 int main(int argc, char* argv[])
 {
   try
@@ -309,6 +404,8 @@ int main(int argc, char* argv[])
     zim::Arg<bool> verbose(argc, argv, 'v');
     zim::Arg<bool> titleSort(argc, argv, 't');
     zim::Arg<bool> verifyChecksum(argc, argv, 'C');
+    zim::Arg<const char*> lang(argc, argv, 'J'); /* smrz */
+    zim::Arg<const char*> dumpAll2One(argc, argv, 'a'); /* smrz */
 
     if (argc <= 1)
     {
@@ -333,6 +430,8 @@ int main(int argc, char* argv[])
                    "                    (print namespaces with counts with -F)\n"
                    "  -Z        dump index data\n"
                    "  -C        verify checksum\n"
+                   "  -a dumpf  dump all namespace A files into dumpf\n" /* smrz */
+                   "  -J lang   set language for the links\n" /* smrz */
                    "\n"
                    "examples:\n"
                    "  " << argv[0] << " -F wikipedia.zim\n"
@@ -342,6 +441,7 @@ int main(int argc, char* argv[])
                    "  " << argv[0] << " -f Auto -l wikipedia.zim\n"
                    "  " << argv[0] << " -f Auto -l -i -v wikipedia.zim\n"
                    "  " << argv[0] << " -o 123159 -l -i wikipedia.zim\n"
+                   "  " << argv[0] << " -a html_from_wikipedia_en_all_novid_2018-10.zim/ -J en wikipedia.zim\n" /* smrz */
                  << std::flush;
       return -1;
     }
@@ -369,6 +469,16 @@ int main(int argc, char* argv[])
     // dump files
     if (dumpAll.isSet())
       app.dumpFiles(dumpAll.getValue());
+
+    // dump files to one /* smrz */
+    if (dumpAll2One.isSet()){ /* smrz */
+        if(lang.isSet()){ /* smrz */
+                app.dumpFiles2One(dumpAll2One.getValue(), argv[1], lang.getValue()); /* smrz */
+        } /* smrz */
+        else{ /* smrz */
+                app.dumpFiles2One(dumpAll2One.getValue(), argv[1], "en"); /* smrz */
+        } /* smrz */
+    } /* smrz */
 
     // print requested info
     if (data)
