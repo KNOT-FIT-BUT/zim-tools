@@ -17,8 +17,6 @@
  *
  */
 
-
-#define VERSION "0.6.0.0"
 #include <iostream>
 #include <sstream>
 #include <vector>
@@ -33,6 +31,7 @@
 #include <limits>
 #include <algorithm>
 
+#include "version.h"
 
 std::string NumberToString(int number)
 {
@@ -252,15 +251,15 @@ public:
         return;
     }
 
-    zim::Uuid getUuid()
+    zim::Uuid getUuid() const
     {
         return fileUid;
     }
-    zim::writer::Url getMainPage()
+    zim::writer::Url getMainPage() const
     {
         return mainUrl;
     }
-    zim::writer::Url getLayoutPage()
+    zim::writer::Url getLayoutPage() const
     {
         return layoutUrl;
     }
@@ -280,19 +279,19 @@ public:
                 continue;
             }
 
-            Article tempArticle(tmpAr,id);
+            auto tempArticle = std::make_shared<Article>(tmpAr,id);
             //If the article is also present in file_2
             if(diff_file.getArticleByUrl(tmpAr.getLongUrl()).good())
             {
                 tmpAr=diff_file.getArticleByUrl(tmpAr.getLongUrl());
-                tempArticle=Article(tmpAr,start_file.getFileheader().getArticleCount()+diff_file.getArticleByUrl(tmpAr.getLongUrl()).getIndex());
+                tempArticle= std::make_shared<Article>(tmpAr,start_file.getFileheader().getArticleCount()+diff_file.getArticleByUrl(tmpAr.getLongUrl()).getIndex());
                 id=tmpAr.getIndex()+start_file.getFileheader().getArticleCount();
             }
             try {
-                tempArticle.setRedirectUrl(zim::writer::Url(redirectList.at(tmpAr.getLongUrl())));
+                tempArticle->setRedirectUrl(zim::writer::Url(redirectList.at(tmpAr.getLongUrl())));
             } catch (...) {}
-            //std::cout<<"\nArticle: "<<tempArticle.getNamespace()<<"/"<<tempArticle.getUrl();
-            //std::cout<<"\nIndex: "<<tempArticle.getIdx();
+            //std::cout<<"\nArticle: "<<tempArticle->getNamespace()<<"/"<<tempArticle->getUrl();
+            //std::cout<<"\nIndex: "<<tempArticle->getIdx();
             //getchar();
             addArticle(tempArticle);
         }
@@ -308,18 +307,18 @@ public:
                 continue;
             }
 
-            Article tempArticle(tmpAr,id);
+            auto tempArticle = std::make_shared<Article>(tmpAr,id);
             //std::cout<<"\nID: "<<id;
             try {
-                tempArticle.setRedirectUrl(zim::writer::Url(redirectList.at(tmpAr.getLongUrl())));
+                tempArticle->setRedirectUrl(zim::writer::Url(redirectList.at(tmpAr.getLongUrl())));
             } catch (...) {}
-            //std::cout<<"\nArticle: "<<tempArticle.getNamespace()<<"/"<<tempArticle.getUrl();
-            //std::cout<<"\nIndex: "<<tempArticle.getIdx();
-            //std::cout<<"\nIsredirect: "<<tempArticle.isRedirect();
+            //std::cout<<"\nArticle: "<<tempArticle->getNamespace()<<"/"<<tempArticle->getUrl();
+            //std::cout<<"\nIndex: "<<tempArticle->getIdx();
+            //std::cout<<"\nIsredirect: "<<tempArticle->isRedirect();
             //getchar();
             addArticle(tempArticle);
-
         }
+
         finishZimCreation();
     }
 };
@@ -327,8 +326,9 @@ public:
 void displayHelp()
 {
     std::cout<<"\nzimpatch"
-             "\nA tool to compute the end_file using a atart_file and a diff_file."
-             "\nUsage: zimpatch [start_file] [diff_file] [output file]  \n";
+      "\nA tool to compute the end_file using a atart_file and a diff_file."
+      "\nUsage: zimpatch [start_file] [diff_file] [output file]"
+      "\nOption: -v, --version    print software version\n";
     return;
 }
 
@@ -406,27 +406,22 @@ bool checkDiffFile(std::string startFileName, std::string diffFileName)
 
 int main(int argc, char* argv[])
 {
-
-    //Parsing arguments
-    //There will be only three arguments, so no detailed parsing is required.
-    std::cout<<"zimpatch\nVERSION "<<VERSION<<"\n"<<std::flush;
+    // Parsing arguments. There will be only three arguments, so no
+    // detailed parsing is required.
     for(int i=0; i<argc; i++)
     {
-        if(std::string(argv[i])=="-h")
+        if(std::string(argv[i])=="-H" ||
+           std::string(argv[i])=="--help" ||
+           std::string(argv[i])=="-h")
         {
             displayHelp();
             return 0;
         }
 
-        if(std::string(argv[i])=="-H")
+        if(std::string(argv[i])=="--version" ||
+           std::string(argv[i])=="-v")
         {
-            displayHelp();
-            return 0;
-        }
-
-        if(std::string(argv[i])=="--help")
-        {
-            displayHelp();
+            version();
             return 0;
         }
     }
@@ -458,7 +453,6 @@ int main(int argc, char* argv[])
         //Create the article source class, from which the content for the file will be read.
         //Create the actual file.
         c.create(end_filename);
-
     }
     catch (const std::exception& e)
     {

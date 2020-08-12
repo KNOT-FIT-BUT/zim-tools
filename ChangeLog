@@ -1,13 +1,55 @@
-zim-tools 1.0.2
+zim-tools 1.2.1
 ===============
 
+ * Fix compilation warning
+
+zim-tools 1.2
+=============
+
+ * Fix a lot small issues about CI compilation.
+ * zimdump: Add an option to dump redirection using html redirect or symlink.
+
+zim-tools 1.1.1
+===============
+
+ * Adapt to new api of libzim.
+
+1.1.0
+=====
+
+ * [CI] Move to github's action ci.
+ * zimdump: Use the url article instead of the title as filename.
+ * zimbench: Fix time measurement.
+
+1.0.5
+=====
+
+ * Adapt to the new libzim's creator api
+ * zimrecreate: Better performance.
+ * zimcheck: Check if an entry is empty
+
+1.0.4
+=====
+
+ * zimcheck: Better handling of ./ in URL checking
+
+1.0.3
+=====
+
+ * ZimCheck handles properly geo: mailto: tel: javascript: links
+ * Fix external URL checking error message and usage()
+ * Added -V --version command line arguments
+
+1.0.2
+=====
+
  * Update readme.
- * ZimCheck return a proper status code.
+ * ZimCheck returns a proper status code.
  * Update to last API of libzim 5.0.0
  * Temporally deactivate compilation of zimBench on windows.
 
-zim-tools 1.0.1
-===============
+1.0.1
+=====
 
  * Update build.
  * [zimCheck] Far better zimCheck implementation :
@@ -15,8 +57,8 @@ zim-tools 1.0.1
     - fix url check
  * Build without rpath
 
-zim-tools 1.0.0
-===============
+1.0.0
+=====
 
  * Remove warnings.
  * Compile zim-tools with travis.

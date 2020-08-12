@@ -1,6 +1,7 @@
 /*
- * Copyright (C)  Kiran Mathew Koshy
- * Copyright (C)  Matthieu Gautier <mgautier@kymeria.fr>
+ * Copyright (C) Kiran Mathew Koshy
+ * Copyright (C) Matthieu Gautier <mgautier@kymeria.fr>
+ * Copyright (C) Emmanuel Engelhart <kelson@kiwix.org>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -31,11 +32,13 @@
 #include <algorithm>
 #include <regex>
 #include <ctime>
-#include "progress.h"
 
+#include "progress.h"
+#include "version.h"
 
 enum TestType {
     CHECKSUM,
+    EMPTY,
     METADATA,
     FAVICON,
     MAIN_PAGE,
@@ -69,6 +72,7 @@ class ErrorLogger {
   private:
     std::map<TestType, std::vector<std::string>> errors;
     bool testStatus[OTHER+1];
+
   public:
     ErrorLogger() {
         for (int testType=CHECKSUM; testType<=OTHER; ++testType) {
@@ -162,12 +166,15 @@ int adler32(std::string buf)                        //Adler32 Hash Function. Use
 
 inline bool isExternalUrl(const std::string& input_string)
 {
-    // A string starting with "<scheme>://".
-    static std::regex external_url_regex = std::regex("[^:/?#]+:\\/\\/.*", std::regex_constants::icase);
+    // A string starting with "<scheme>://" or "geo:" or "tel:" or "javascript:" or "mailto:"
+    static std::regex external_url_regex =
+      std::regex("([^:/?#]+:\\/\\/|geo:|tel:|mailto:|javascript:).*",
+                 std::regex_constants::icase);
     return std::regex_match(input_string, external_url_regex);
 }
 
-inline bool isInternalUrl(const std::string& input_string)                 //Checks if a URL is an internal URL or not. Uses RegExp.
+// Checks if a URL is an internal URL or not. Uses RegExp.
+inline bool isInternalUrl(const std::string& input_string)
 {
     return !isExternalUrl(input_string);
 }
@@ -213,7 +220,7 @@ std::string normalize_link(const std::string& input, const std::string& baseUrl)
             if (strncmp(p, "./", 2) == 0) {
                 // We must simply skip this part
                 // Simply move after the ".".
-                p += 1;
+                p += 2;
                 check_rel = false;
                 continue;
             }
@@ -257,17 +264,19 @@ void displayHelp()
              "./zimcheckusage: ./zimcheck [options] zimfile\n"
              "options:\n"
              "-A , --all             run all tests. Default if no flags are given.\n"
+             "-0 , --empty           Empty content\n"
              "-C , --checksum        Internal CheckSum Test\n"
              "-M , --metadata        MetaData Entries\n"
              "-F , --favicon         Favicon\n"
              "-P , --main            Main page\n"
              "-R , --redundant       Redundant data check\n"
              "-U , --url_internal    URL check - Internal URLs\n"
-             "-X , --url_external    URL check - Internal URLs\n"
+             "-X , --url_external    URL check - External URLs\n"
              "-E , --mime            MIME checks\n"
              "-D , --details         Details of error\n"
              "-B , --progress        Print progress report\n"
              "-H , --help            Displays Help\n"
+             "-V , --version         Displays software version\n"
              "examples:\n"
              "./zimcheck -A wikipedia.zim\n"
              "./zimcheck --checksum --redundant wikipedia.zim\n"
@@ -340,7 +349,8 @@ void test_mainpage(const zim::File& f, ErrorLogger& reporter) {
 }
 
 
-void test_articles(const zim::File& f, ErrorLogger& reporter, ProgressBar progress, bool redundant_data, bool url_check, bool url_check_external) {
+void test_articles(const zim::File& f, ErrorLogger& reporter, ProgressBar progress,
+                   bool redundant_data, bool url_check, bool url_check_external, bool empty_check) {
     std::cout << "[INFO] Verifying Articles' content.. " << std::endl;
     // Article are store in a map<hash, list<index>>.
     // So all article with the same hash will be stored in the same list.
@@ -352,8 +362,18 @@ void test_articles(const zim::File& f, ErrorLogger& reporter, ProgressBar progre
     progress.reset(f.getFileheader().getArticleCount());
     for (zim::File::const_iterator it = f.begin(); it != f.end(); ++it)
     {
-        std::string data;
         progress.report();
+
+        if (it->getArticleSize() == 0 &&
+            empty_check &&
+            (it->getNamespace() == 'A' ||
+             it->getNamespace() == 'I')) {
+          std::ostringstream ss;
+          ss << "Entry " << it->getLongUrl() << " is empty";
+          reporter.addError(EMPTY, ss.str());
+          reporter.setTestResult(EMPTY, false);
+        }
+
         if (it->isRedirect() ||
             it->isLinktarget() ||
             it->isDeleted() ||
@@ -362,6 +382,7 @@ void test_articles(const zim::File& f, ErrorLogger& reporter, ProgressBar progre
             continue;
         }
 
+        std::string data;
         if (redundant_data || it->getMimeType() == "text/html")
             data = it->getData();
 
@@ -375,19 +396,19 @@ void test_articles(const zim::File& f, ErrorLogger& reporter, ProgressBar progre
         {
             auto baseUrl = it->getLongUrl();
             auto pos = baseUrl.find_last_of('/');
-            baseUrl.resize(pos==baseUrl.npos?0:pos);
+            baseUrl.resize( pos==baseUrl.npos ? 0 : pos );
 
             auto links = getLinks(it->getData());
             for(auto olink: links)
             {
-                if(olink.front() == '#')
+                if (olink.front() == '#')
                     continue;
-                if(isInternalUrl(olink)) {
+                if (isInternalUrl(olink)) {
                     auto link = normalize_link(olink, baseUrl);
                     char nm = link[0];
                     std::string shortUrl(link.substr(2));
                     auto a = f.getArticle(nm, shortUrl);
-                    if(!a.good())
+                    if (!a.good())
                     {
                         int index = it->getIndex();
                         if ((previousLink != link) && (previousIndex != index) )
@@ -410,12 +431,14 @@ void test_articles(const zim::File& f, ErrorLogger& reporter, ProgressBar progre
                 continue;
 
             auto links = getDependencies(it->getPage());
-            for(auto &link: links)
+            for (auto &link: links)
             {
-                if( isExternalUrl( link ) )
+                if (isExternalUrl( link ))
                 {
-                    reporter.addError(URL_EXTERNAL, it->getLongUrl());
-                    reporter.setTestResult(URL_INTERNAL, false);
+                    std::ostringstream ss;
+                    ss << link << " is an external dependence in article " << it->getLongUrl();
+                    reporter.addError(URL_EXTERNAL, ss.str());
+                    reporter.setTestResult(URL_EXTERNAL, false);
                     break;
                 }
             }
@@ -475,6 +498,7 @@ int main (int argc, char **argv)
     bool redundant_data = false;
     bool url_check = false;
     bool url_check_external = false;
+    bool empty_check = false;
     bool mime_check = false;
     bool error_details = false;
     bool no_args = true;
@@ -491,22 +515,23 @@ int main (int argc, char **argv)
     {
         static struct option long_options[] =
         {
-            { "all",     no_argument,       0, 'A'},
-            { "checksum",  no_argument,       0, 'C'},
-            { "metadata",  no_argument,       0, 'M'},
-            { "favicon",  no_argument,       0, 'F'},
-            { "main",  no_argument,       0, 'P'},
-            { "redundant",  no_argument,       0, 'R'},
-            { "url_internal",  no_argument,       0, 'U'},
-            { "url_external",  no_argument,       0, 'X'},
-            { "mime",  no_argument,       0, 'E'},
-            { "details",  no_argument,       0, 'D'},
-            { "help",  no_argument,       0, 'H'},
-            { "progress",  no_argument,       0, 'B'},
+            { "all",          no_argument, 0, 'A'},
+            { "empty",        no_argument, 0, '0'},
+            { "checksum",     no_argument, 0, 'C'},
+            { "metadata",     no_argument, 0, 'M'},
+            { "favicon",      no_argument, 0, 'F'},
+            { "main",         no_argument, 0, 'P'},
+            { "redundant",    no_argument, 0, 'R'},
+            { "url_internal", no_argument, 0, 'U'},
+            { "url_external", no_argument, 0, 'X'},
+            { "mime",         no_argument, 0, 'E'},
+            { "details",      no_argument, 0, 'D'},
+            { "help",         no_argument, 0, 'H'},
+            { "version",      no_argument, 0, 'V'},
             { 0, 0, 0, 0}
         };
         int option_index = 0;
-        int c = getopt_long (argc, argv, "ACMFPRUXEDHBacmfpruxedhb",
+        int c = getopt_long (argc, argv, "ACMFPRUXEDHBVacmfpruxedhbv",
                              long_options, &option_index);
         //c = getopt (argc, argv, "ACMFPRUXED");
         if(c == -1)
@@ -517,6 +542,9 @@ int main (int argc, char **argv)
         case 'a':
             run_all = true;
             no_args = false;
+            break;
+        case '0':
+            empty_check = true;
             break;
         case 'C':
         case 'c':
@@ -572,37 +600,22 @@ int main (int argc, char **argv)
             break;
         case '?':
             if (optopt == 'c')
-                std::cerr<<"Option "<<(char)optopt<<" requires an argument.\n"
-                         "options:\n"
-                         "  -A , --all        run all tests. Default if no flags are given.\n"
-                         "  -C        Internal CheckSum Test\n"
-                         "  -M        MetaData Entries\n"
-                         "  -F        Favicon\n"
-                         "  -P        Main page\n"
-                         "  -R        Redundant data check\n"
-                         "  -U        URL checks\n"
-                         "  -X        External Dependency check\n"
-                         "  -E        MIME checks\n"
-                         "  -D        Lists Details of the errors in the ZIM file.\n"
-                         "  -B        Print progress report.\n"
-                         "\n"
-                         "examples:\n"
-                         "  " << argv[0] << " -A wikipedia.zim\n"
-                         "  " << argv[0] << " -C wikipedia.zim\n"
-                         "  " << argv[0] << " -F -R wikipedia.zim\n"
-                         "  " << argv[0] << " -MI wikipedia.zim\n"
-                         "  " << argv[0] << " -U wikipedia.zim\n"
-                         "  " << argv[0] << " -R -U wikipedia.zim\n"
-                         "  " << argv[0] << " -R -U -MI wikipedia.zim\n"
-                         << std::flush;
+            {
+              std::cerr<<"Option "<<(char)optopt<<" requires an argument.\n";
+              displayHelp();
+            }
             else if ( isprint (optopt) )
-                std::cerr<<"Unknown option `"<<( char )optopt<<"'.\n";
+              std::cerr<<"Unknown option `"<<( char )optopt<<"'.\n";
             else
             {
                 std::cerr<<"Unknown option\n";
                 displayHelp();
             }
             return 1;
+        case 'V':
+        case 'v':
+          version();
+          return 0;
         default:
             abort ();
         }
@@ -616,9 +629,10 @@ int main (int argc, char **argv)
     }
 
     //If no arguments are given to the program, all the tests are performed.
-    if( run_all || no_args )
+    if ( run_all || no_args )
     {
-        checksum = metadata = favicon = main_page = redundant_data = url_check = url_check_external = mime_check = true;
+        checksum = metadata = favicon = main_page = redundant_data =
+          url_check = url_check_external = mime_check = empty_check = true;
     }
 
     //Obtaining filename from argument list
@@ -641,6 +655,7 @@ int main (int argc, char **argv)
     {
         std::cout << "[INFO] Checking zim file " << filename << std::endl;
         zim::File f( filename );
+
         //Test 1: Internal Checksum
         if(checksum)
             test_checksum(f, error);
@@ -681,8 +696,8 @@ int main (int argc, char **argv)
          * }
          */
 
-        if ( redundant_data || url_check || url_check_external )
-            test_articles(f, error, progress, redundant_data, url_check, url_check_external);
+        if ( redundant_data || url_check || url_check_external || empty_check )
+          test_articles(f, error, progress, redundant_data, url_check, url_check_external, empty_check);
 
 
         //Test 8: Verifying MIME Types

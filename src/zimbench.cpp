@@ -20,6 +20,7 @@
 #include <iostream>
 #include <vector>
 #include <set>
+#include <chrono>
 
 #include <stdlib.h>
 #include <time.h>
@@ -30,6 +31,8 @@
 #include <zim/blob.h>
 
 #include <getopt.h>
+
+#include "version.h"
 
 std::string randomUrl()
 {
@@ -55,7 +58,7 @@ int main(int argc, char* argv[])
   {
     while (true) {
       int option_index = 0;
-      int c = getopt_long(argc, argv, "sn:r:d:",
+      int c = getopt_long(argc, argv, "vsn:r:d:",
               long_options, &option_index);
 
       if (c!= -1) {
@@ -83,6 +86,9 @@ int main(int argc, char* argv[])
             distinctCountSet = true;
             distinctCount = atoi(optarg);
             break;
+          case 'v':
+            version();
+            return 0;
         };
       } else {
         if (optind < argc ) {
@@ -95,9 +101,10 @@ int main(int argc, char* argv[])
     if (filename.empty())
     {
       std::cerr << "usage: " << argv[0] << " [options] zimfile\n"
-                   "\t-n number\tnumber of linear accessed articles (default 1000)\n"
-                   "\t-r number\tnumber of random accessed articles (default: same as -n)\n"
-                   "\t-d number\tnumber of distinct articles used for random access (default: same as -r)\n"
+        "\t-n number\tnumber of linear accessed articles (default 1000)\n"
+        "\t-r number\tnumber of random accessed articles (default: same as -n)\n"
+        "\t-d number\tnumber of distinct articles used for random access (default: same as -r)\n\n"
+        "\t-v to print the software version\n"
                 << std::flush;
       return 1;
     }
@@ -139,12 +146,7 @@ int main(int argc, char* argv[])
 
     // linear read
     std::cout << "linear:" << std::flush;
-    struct timespec time_start;
-    struct timespec time_stop;
-    long long milliseconds_start, milliseconds_stop, milliseconds_delta;
-
-    clock_gettime(CLOCK_REALTIME, &time_start);
-    milliseconds_start = time_start.tv_sec*1000LL + time_start.tv_nsec/1000;
+    auto start = std::chrono::steady_clock::now();
 
     unsigned size = 0;
     for (UrlsType::const_iterator it = urls.begin(); it != urls.end(); ++it) {
@@ -156,10 +158,9 @@ int main(int argc, char* argv[])
       }
     }
 
-    clock_gettime(CLOCK_REALTIME, &time_stop);
-    milliseconds_stop = time_stop.tv_sec*1000LL + time_stop.tv_nsec/1000;
-    milliseconds_delta = milliseconds_stop - milliseconds_start;
-    std::cout << "\tsize=" << size << "\tt=" << (milliseconds_delta / 1000.0) << "s\t" << (static_cast<double>(urls.size()) / milliseconds_delta * 1000.0) << " articles/s" << std::endl;
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> diff = end - start;
+    std::cout << "\tsize=" << size << "\tt=" << diff.count() << "s\t" << (static_cast<double>(urls.size()) / diff.count()) << " articles/s" << std::endl;
 
     // reopen file
     file = zim::File();
@@ -168,20 +169,21 @@ int main(int argc, char* argv[])
     // random access
     std::cout << "random:" << std::flush;
 
-    clock_gettime(CLOCK_REALTIME, &time_start);
-    milliseconds_start = time_start.tv_sec*1000LL + time_start.tv_nsec/1000;
+    start = std::chrono::steady_clock::now();
 
     size = 0;
-    for (unsigned r = 0; r < randomCount; ++r)
-      size += file.getArticle(ns, randomUrls[rand() % randomUrls.size()]).getData().size();
-
+    for (unsigned r = 0; r < randomCount; ++r) {
+      auto randomArticle = file.getArticle(ns, randomUrls[rand() % randomUrls.size()]);
+      if (randomArticle.good()) {
+        size += randomArticle.getData().size();
+      }
+    }
     //for (UrlsType::const_iterator it = randomUrls.begin(); it != randomUrls.end(); ++it)
       //size += file.getArticle(ns, *it).getData().size();
 
-    clock_gettime(CLOCK_REALTIME, &time_stop);
-    milliseconds_stop = time_stop.tv_sec*1000LL + time_stop.tv_nsec/1000;
-    milliseconds_delta = milliseconds_stop - milliseconds_start;
-    std::cout << "\tsize=" << size << "\tt=" << (milliseconds_delta / 1000.0) << "s\t" << (static_cast<double>(randomCount) / milliseconds_delta * 1000.0) << " articles/s" << std::endl;
+    end = std::chrono::steady_clock::now();
+    diff = end - start;
+    std::cout << "\tsize=" << size << "\tt=" << diff.count() << "s\t" << (static_cast<double>(randomCount) / diff.count()) << " articles/s" << std::endl;
   }
   catch (const std::exception& e)
   {

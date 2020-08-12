@@ -17,8 +17,6 @@
  *
  */
 
-
-#define VERSION "0.6.0.0"
 #include <iostream>
 #include <sstream>
 #include <vector>
@@ -30,6 +28,8 @@
 #include <list>
 #include <algorithm>
 #include <sstream>
+
+#include "version.h"
 
 class Article : public zim::writer::Article         //Article class that will be passed to the zimwriter. Contains a zim::Article class, so it is easier to add a
 {
@@ -99,6 +99,20 @@ public:
     }
 };
 
+using pair_type = std::pair<zim::article_index_type, zim::cluster_index_type>;
+
+class ComparatorByCluster {
+  public:
+    ComparatorByCluster(const zim::File& origin):
+      origin(origin) {
+    }
+
+    bool operator() (pair_type i, pair_type j) {
+      return i.second < j.second;
+    }
+  const zim::File& origin;
+};
+
 
 class ZimRecreator : public zim::writer::Creator
 {
@@ -116,20 +130,37 @@ public:
 
     virtual void create(const std::string& fname)
     {
-        startZimCreation(fname);
-        for(auto& article: origin)
+        std::cout << "generate list of articles" << std::endl;
+        std::vector<pair_type> article_list;
+        auto nb_articles = origin.getCountArticles();
+        article_list.reserve(nb_articles);
+        for(zim::article_index_type i=0; i<nb_articles; i++) {
+            auto article = origin.getArticle(i);
+            article_list.push_back(std::make_pair(i, article.getClusterNumber()));
+            if ((i % 10000) == 0)
+              std::cout << i << "/" << nb_articles << std::endl;
+        }
+        std::cout << "sorting articles" << std::endl;
         {
-            if (article.getNamespace() == 'Z' && article.getNamespace() == 'X') {
-              // Index is recreated by zimCreator. Do not add it
-              continue;
-            }
-            Article tempArticle(article);
-            addArticle(tempArticle);
+          ComparatorByCluster comparator(origin);
+          std::sort(article_list.begin(), article_list.end(), comparator);
+        }
+        std::cout << "starting zim creation" << std::endl;
+        startZimCreation(fname);
+        for(auto& pair: article_list)
+        {
+          auto article = origin.getArticle(pair.first);
+          if (article.getNamespace() == 'Z' || article.getNamespace() == 'X') {
+            // Index is recreated by zimCreator. Do not add it
+            continue;
+          }
+          auto tempArticle = std::make_shared<Article>(article);
+          addArticle(tempArticle);
         }
         finishZimCreation();
     }
 
-    virtual zim::writer::Url getMainUrl() {
+    virtual zim::writer::Url getMainUrl() const {
       if (!origin.getFileheader().hasMainPage()) {
         return zim::writer::Url();
       }
@@ -137,7 +168,7 @@ public:
       return zim::writer::Url(mainArticle.getNamespace(), mainArticle.getUrl());
     }
 
-    virtual zim::writer::Url getLayoutUrl() {
+    virtual zim::writer::Url getLayoutUrl() const {
       if (!origin.getFileheader().hasLayoutPage()) {
        return zim::writer::Url();
       }
@@ -150,7 +181,8 @@ void displayHelp()
 {
     std::cout<<"\nzimrecreate"
     "\nA tool to recreate a ZIM files from a existing ZIM."
-    "\nUsage: zimdiff [origin_file] [output file]  \n";
+    "\nUsage: zimrecreate [origin_file] [output file]"
+    "\nOption: -v, --version    print software version\n";
     return;
 }
 
@@ -162,21 +194,18 @@ int main(int argc, char* argv[])
     std::cout<<"zimrecreate\n";
     for(int i=0;i<argc;i++)
     {
-        if(std::string(argv[i])=="-h")
+        if(std::string(argv[i])=="-H" ||
+           std::string(argv[i])=="--help" ||
+           std::string(argv[i])=="-h")
         {
             displayHelp();
             return 0;
         }
 
-        if(std::string(argv[i])=="-H")
+        if(std::string(argv[i])=="--version" ||
+           std::string(argv[i])=="-v")
         {
-            displayHelp();
-            return 0;
-        }
-
-        if(std::string(argv[i])=="--help")
-        {
-            displayHelp();
+            version();
             return 0;
         }
     }

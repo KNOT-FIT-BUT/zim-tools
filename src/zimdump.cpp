@@ -26,15 +26,68 @@
 #include <stdexcept>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <iomanip> /* smrz */
+#include <iomanip>
+#include <array>
 #include <cstdlib> /* smrz */
 #include <dirent.h> /* smrz */
 
 #include "arg.h"
+#include "version.h"
+
+#include <fcntl.h>
+#ifdef _WIN32
+# define SEPARATOR "\\"
+# include <io.h>
+# include <windows.h>
+#else
+# define SEPARATOR "/"
+# include <unistd.h>
+# include <sys/stat.h>
+#endif
 
 const std::string title_beg = "<title>"; /* smrz */
 const std::string title_end = "</title>"; /* smrz */
 const int max_file_size = 100 * 1024 * 1024; /* smrz */
+
+static bool isReservedUrlChar(const char c)
+{
+    constexpr std::array<char, 10> reserved = {{';', ',', '/', '?', ':',
+                                               '@', '&', '=', '+', '$' }};
+
+    return std::any_of(reserved.begin(), reserved.end(),
+                       [&c] (const char &elem) { return elem == c; } );
+}
+
+static bool needsEscape(const char c, const bool encodeReserved)
+{
+  if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
+    return false;
+
+  if (isReservedUrlChar(c))
+    return encodeReserved;
+
+  constexpr std::array<char, 9> noNeedEscape = {{'-', '_', '.', '!', '~',
+                                                '*', '\'', '(', ')' }};
+
+  return not std::any_of(noNeedEscape.begin(), noNeedEscape.end(),
+                         [&c] (const char &elem) { return elem == c; } );
+}
+
+std::string urlEncode(const std::string& value, bool encodeReserved)
+{
+  std::ostringstream os;
+  os << std::hex << std::uppercase;
+  for (std::string::const_iterator it = value.begin();
+       it != value.end();
+       ++it) {
+    if (!needsEscape(*it, encodeReserved)) {
+      os << *it;
+    } else {
+      os << '%' << std::setw(2) << static_cast<unsigned int>(static_cast<unsigned char>(*it));
+    }
+  }
+  return os.str();
+}
 
 class ZimDumper
 {
@@ -65,7 +118,7 @@ class ZimDumper
       { listArticle(*pos, extra); }
     void listArticleT(bool extra)
       { listArticleT(*pos, extra); }
-    void dumpFiles(const std::string& directory);
+    void dumpFiles(const std::string& directory, bool symlinkdump);
     void verifyChecksum();
     void dumpFiles2One(const std::string& dumpfile, std::string input_file, const std::string& lang); /* smrz */
     std::string IntToString(int num); /* smrz */
@@ -119,7 +172,7 @@ void ZimDumper::printNsInfo(char ch)
 
 void ZimDumper::locateArticle(zim::size_type idx)
 {
-  pos = zim::File::const_iterator(&file, idx);
+  pos = zim::File::const_iterator(&file, idx, zim::File::const_iterator::UrlIterator);
 }
 
 void ZimDumper::findArticle(char ns, const char* expr, bool title)
@@ -253,7 +306,27 @@ void ZimDumper::listArticleT(const zim::Article& article, bool extra)
   std::cout << std::endl;
 }
 
-void ZimDumper::dumpFiles(const std::string& directory)
+inline void write_to_file(const std::string& path, const char* data, ssize_t size) {
+#ifdef _WIN32
+    auto needed_size = MultiByteToWideChar(CP_UTF8, 0, path.data(), path.size(), NULL, 0);
+    std::wstring wpath(needed_size, 0);
+    MultiByteToWideChar(CP_UTF8, 0, path.data(), path.size(), &wpath[0], needed_size);
+    auto fd = _wopen(wpath.c_str(), _O_WRONLY | _O_CREAT | _O_TRUNC, S_IWRITE);
+#else
+    auto fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC,
+                              S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+#endif
+    if (fd == -1) {
+      throw std::runtime_error("Error opening file " + path);
+    }
+    if (write(fd, data, size) != size) {
+      close(fd);
+      throw std::runtime_error("Error writing to file " + path);
+    }
+    close(fd);
+}
+
+void ZimDumper::dumpFiles(const std::string& directory, bool symlinkdump)
 {
   unsigned int truncatedFiles = 0;
 #if defined(_WIN32)
@@ -265,29 +338,59 @@ void ZimDumper::dumpFiles(const std::string& directory)
   std::set<char> ns;
   for (zim::File::const_iterator it = pos; it != file.end(); ++it)
   {
-    std::string d = directory + '/' + it->getNamespace();
+    std::string d = directory + SEPARATOR + it->getNamespace();
     if (ns.find(it->getNamespace()) == ns.end())
+    {
 #if defined(_WIN32)
       ::mkdir(d.c_str());
 #else
       ::mkdir(d.c_str(), 0777);
 #endif
-    std::string t = it->getTitle();
+        ns.insert(it->getNamespace());
+    }
+    std::string url = it->getUrl();
     std::string::size_type p;
-    while ((p = t.find('/')) != std::string::npos)
-      t.replace(p, 1, "%2f");
-    if ( t.length() > 255 )
+    while ((p = url.find('/')) != std::string::npos)
+      url.replace(p, 1, "%2f");
+    if ( url.length() > 255 )
     {
       std::ostringstream sspostfix, sst;
       sspostfix << (++truncatedFiles);
-      sst << t.substr(0, 254-sspostfix.tellp()) << "~" << sspostfix.str();
-      t = sst.str();
+      sst << url.substr(0, 254-sspostfix.tellp()) << "~" << sspostfix.str();
+      url = sst.str();
     }
-    std::string f = d + '/' + t;
-    std::ofstream out(f.c_str());
-    out << it->getData();
-    if (!out)
-      throw std::runtime_error("error writing file " + f);
+    std::string f = d + SEPARATOR + url;
+    if (it->isRedirect())
+    {
+        auto redirectArticle = it->getRedirectArticle();
+        std::string redirectUrl = redirectArticle.getUrl();
+        if (symlinkdump == false && redirectArticle.getMimeType() == "text/html")
+        {
+            std::ostringstream ss;
+            ss <<  "<meta http-equiv=\"refresh\" content=\"0\"; url=\"";
+            ss << urlEncode(redirectUrl, true);
+            ss << "\" />";
+            auto content = ss.str();
+            write_to_file(f, content.c_str(), content.size());
+        }
+        else
+        {
+#ifdef _WIN32
+            auto blob = redirectArticle.getData();
+            write_to_file(f, blob.data(), blob.size());
+#else
+            if (symlink(redirectUrl.c_str(), f.c_str()) != 0) {
+              throw std::runtime_error(
+                std::string("Error creating symlink from ") + redirectUrl + " to " + f);
+            }
+#endif
+        }
+    }
+    else
+    {
+      auto blob = it->getData();
+      write_to_file(f, blob.data(), blob.size());
+    }
   }
 }
 
@@ -406,6 +509,17 @@ int main(int argc, char* argv[])
     zim::Arg<bool> verifyChecksum(argc, argv, 'C');
     zim::Arg<const char*> lang(argc, argv, 'J'); /* smrz */
     zim::Arg<const char*> dumpAll2One(argc, argv, 'a'); /* smrz */
+    zim::Arg<bool> printVersion(argc, argv, 'V');
+#ifndef _WIN32
+    zim::Arg<bool> redirectSymlink(argc, argv, 's');
+#endif
+
+    // version number
+    if (printVersion)
+    {
+      version();
+      return 0;
+    }
 
     if (argc <= 1)
     {
@@ -426,8 +540,12 @@ int main(int argc, char* argv[])
                    "  -x        print extra parameters\n"
                    "  -n ns     specify namespace (default 'A')\n"
                    "  -D dir    dump all files into directory\n"
+#ifndef _WIN32
+                   "  -s        Use symlink to dump html redirect. Else create html redirect file."
+#endif
                    "  -v        verbose (print uncompressed length of articles when -i is set)\n"
                    "                    (print namespaces with counts with -F)\n"
+                   "  -V        print the software version number\n"
                    "  -Z        dump index data\n"
                    "  -C        verify checksum\n"
                    "  -a dumpf  dump all namespace A files into dumpf\n" /* smrz */
@@ -467,8 +585,12 @@ int main(int argc, char* argv[])
       app.findArticleByUrl(std::string(url));
 
     // dump files
-    if (dumpAll.isSet())
-      app.dumpFiles(dumpAll.getValue());
+    if (dumpAll.isSet()) {
+#ifdef _WIN32
+      app.dumpFiles(dumpAll.getValue(), false);
+#else
+      app.dumpFiles(dumpAll.getValue(), redirectSymlink);
+#endif
 
     // dump files to one /* smrz */
     if (dumpAll2One.isSet()){ /* smrz */
@@ -500,4 +622,3 @@ int main(int argc, char* argv[])
   }
   return 0;
 }
-

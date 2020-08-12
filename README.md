@@ -2,7 +2,21 @@ ZIM tools
 =============
 
 Various ZIM command line tools. More information about the ZIM format
-and the openZIM project at https://openzim.org
+and the [openZIM project](https://openzim.org).
+
+[![latest release](https://img.shields.io/github/v/tag/openzim/zim-tools?label=latest%20release&sort=semver)](https://download.openzim.org/release/zim-tools/)
+[![Build Status](https://github.com/openzim/zim-tools/workflows/CI/badge.svg?query=branch%3Amaster)](https://github.com/openzim/zim-tools/actions?query=branch%3Amaster)
+[![CodeFactor](https://www.codefactor.io/repository/github/openzim/zim-tools/badge)](https://www.codefactor.io/repository/github/openzim/zim-tools)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
+
+Releases
+----------
+
+Tagged source code and prebuilt Linux x86-64 binaries can be found at:
+
+- https://download.openzim.org/release/zim-tools/ 
+
 
 Disclaimer
 ----------
@@ -17,8 +31,7 @@ Dependencies
 
 The Kiwix library relies on the libzim.
 
-* ZIM library ...................................... https://openzim.org
-(package libzim-dev on Debian/Ubuntu)
+* [ZIM](https://openzim.org) (package `libzim-dev` on Debian/Ubuntu)
 
 These dependencies may or may not be packaged by your operating
 system. They may also be packaged but only in an older version. The
@@ -33,7 +46,7 @@ Environment
 -------------
 
 The ZIM tools build using [Meson](https://mesonbuild.com/) version
-0.39 or higher. Meson relies itself on Ninja, pkg-config and few other
+0.43 or higher. Meson relies itself on Ninja, pkg-config and few other
 compilation tools.
 
 Install first the few common compilation tools:
@@ -42,13 +55,14 @@ Install first the few common compilation tools:
 * Pkg-config
 
 These tools should be packaged if you use a cutting edge operating
-system. If not, have a look to the "Troubleshooting" section.
+system. If not, have a look to the [Troubleshooting](#Troubleshooting)
+section.
 
 Compilation
 -----------
 
 Once all dependencies are installed, you can compile ZIM tools with:
-```
+```bash
 meson . build
 ninja -C build
 ```
@@ -65,8 +79,7 @@ Installation
 
 If you want to install the ZIM tools you just have compiled on your
 system, here we go:
-
-```
+```bash
 ninja -C build install
 ```
 
@@ -78,19 +91,18 @@ Uninstallation
 ------------
 
 If you want to uninstall the ZIM tools:
-
-```
+```bash
 ninja -C build uninstall
 ```
 
-Like for the installation, you might need to run the command as root
-(or using 'sudo').
+Like for the installation, you might need to run the command as user
+`root` (or using `sudo`).
 
 Troubleshooting
 ---------------
 
 If you need to install Meson "manually":
-```
+```bash
 virtualenv -p python3 ./ # Create virtualenv
 source bin/activate      # Activate the virtualenv
 pip3 install meson       # Install Meson
@@ -98,7 +110,7 @@ hash -r                  # Refresh bash paths
 ```
 
 If you need to install Ninja "manually":
-```
+```bash
 git clone git://github.com/ninja-build/ninja.git
 cd ninja
 git checkout release
@@ -117,4 +129,5 @@ repository.
 License
 -------
 
-GPLv3 or later, see COPYING for more details.
+[GPLv3](https://www.gnu.org/licenses/gpl-3.0) or later, see
+[LICENSE](LICENSE) for more details.
