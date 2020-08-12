@@ -591,6 +591,7 @@ int main(int argc, char* argv[])
 #else
       app.dumpFiles(dumpAll.getValue(), redirectSymlink);
 #endif
+    }
 
     // dump files to one /* smrz */
     if (dumpAll2One.isSet()){ /* smrz */
