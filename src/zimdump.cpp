@@ -460,6 +460,7 @@ void ZimDumper::dumpFiles2One(const std::string& dump_dir, std::string input_fil
 			if( found != std::string::npos ){ /* smrz */
 				title = data.substr(found + title_beg.length() , data.find(title_end) - (found + title_beg.length()) ); /* smrz */
 				title = ReplaceQuotMarks(title); /* smrz */
+				title.erase(title.find_last_not_of(" \t\f\v\n\r") + 1);
 				uri = "http://" + lang + ".wikipedia.org/wiki/" + title; /* smrz */
 				std::replace( uri.begin(), uri.end(), ' ', '_'); /* smrz */
 			} /* smrz */
