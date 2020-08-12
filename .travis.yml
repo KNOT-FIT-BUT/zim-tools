@@ -1,6 +1,6 @@
 language: cpp
-dist: trusty
-sudo: false
+dist: xenial
+sudo: true
 cache: ccache
 before_install:
 - PATH=$PATH:$HOME/bin
@@ -13,6 +13,7 @@ env:
 addons:
   apt:
     packages:
+      - python3.5
       - python3-pip
       - libbz2-dev
       - ccache

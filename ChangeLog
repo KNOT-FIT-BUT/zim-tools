@@ -1,3 +1,20 @@
+zim-tools 1.0.2
+===============
+
+ * Update readme.
+ * ZimCheck return a proper status code.
+ * Update to last API of libzim 5.0.0
+ * Temporally deactivate compilation of zimBench on windows.
+
+zim-tools 1.0.1
+===============
+
+ * Update build.
+ * [zimCheck] Far better zimCheck implementation :
+    - performance issue
+    - fix url check
+ * Build without rpath
+
 zim-tools 1.0.0
 ===============
 
