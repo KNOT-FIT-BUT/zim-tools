@@ -17,6 +17,9 @@
  *
  */
 
+#include <algorithm>
+#include <regex>
+
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -439,6 +442,8 @@ void ZimDumper::dumpFiles2One(const std::string& dump_dir, std::string input_fil
 	} /* smrz */
  /* smrz */
   std::size_t position = input_file.find("/"); /* smrz */
+  std::regex regex_quot("\"");
+  std::regex regex_newline("[\r\n]");
   while(position != std::string::npos){ /* smrz */
     input_file.erase(0, position + 1); /* smrz */
     position = input_file.find("/"); /* smrz */
@@ -457,12 +462,15 @@ void ZimDumper::dumpFiles2One(const std::string& dump_dir, std::string input_fil
 			std::string title, uri; /* smrz */
  /* smrz */
 			std::size_t found = data.find(title_beg); /* smrz */
+			// TODO: Extract URL from <link rel="canonical" href="https://en.wikipedia.org/wiki/Billboard_Music_Award_for_Top_Female_Artist">
 			if( found != std::string::npos ){ /* smrz */
 				title = data.substr(found + title_beg.length() , data.find(title_end) - (found + title_beg.length()) ); /* smrz */
-				title = ReplaceQuotMarks(title); /* smrz */
 				title.erase(title.find_last_not_of(" \t\f\v\n\r") + 1);
-				uri = "http://" + lang + ".wikipedia.org/wiki/" + title; /* smrz */
+				title = std::regex_replace(title, regex_newline, "");
+				uri = ReplaceQuotMarks(title); /* smrz */
+				uri = "http://" + lang + ".wikipedia.org/wiki/" + uri; /* smrz */
 				std::replace( uri.begin(), uri.end(), ' ', '_'); /* smrz */
+				title = std::regex_replace(title, regex_quot, "&quot;");
 			} /* smrz */
 			 /* smrz */
 			if( title.empty() ){ /* smrz */
